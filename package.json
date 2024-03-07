@@ -12,5 +12,10 @@
   "devDependencies": {
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "@langchain/openai": "^0.0.18",
+    "dotenv": "^16.4.5",
+    "langchain": "^0.1.25"
   }
 }
