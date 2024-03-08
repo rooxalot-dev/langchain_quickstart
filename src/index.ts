@@ -7,6 +7,9 @@ import { StringOutputParser } from "@langchain/core/output_parsers";
 import { CheerioWebBaseLoader } from "langchain/document_loaders/web/cheerio";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
+import { OpenAIEmbeddings } from "@langchain/openai";
+import { MemoryVectorStore } from "langchain/vectorstores/memory";
+
 config();
 
 const invokeChat = async () => {
@@ -15,11 +18,6 @@ const invokeChat = async () => {
 
   const loader = new CheerioWebBaseLoader("https://docs.smith.langchain.com/user_guide");
   const docs = await loader.load();
-  const [{ pageContent }] = await loader.load();
-  console.log('Loaded context doc', {
-    length: pageContent.length,
-    contentLength: pageContent.length,
-  });
 
   const splitter = new RecursiveCharacterTextSplitter();
   const splitDocs = await splitter.splitDocuments(docs);
@@ -27,6 +25,12 @@ const invokeChat = async () => {
     splits: splitDocs.length,
     contentLength: splitDocs[0].pageContent.length,
   });
+
+  const embeddings = new OpenAIEmbeddings();
+  const vectorStore = await MemoryVectorStore.fromDocuments(
+    splitDocs,
+    embeddings
+  );
 
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", "You are a world class technical documentation writer with relevant knowledge on technology."],
