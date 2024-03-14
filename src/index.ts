@@ -37,61 +37,47 @@ const invokeChat = async () => {
   );
   const vectorStoreRetriever = vectorStore.asRetriever();
 
-  const prompt = ChatPromptTemplate.fromTemplate(`
-    Answer the following question based only on the provided context:
+  // Prompt
+  const historyAwareRetrievalPrompt = ChatPromptTemplate.fromMessages([
+    [
+      'system',
+      `Answer the user's questions based on the below context:
 
-    <context>
-    {context}
-    </context>
-
-    You don't need to explain that the answer that you'll give is based on the context.
-
-    Question: {input}
-  `);
-
-  const documentChain = await createStuffDocumentsChain({
-    llm: chatModel,
-    prompt,
-    outputParser: new StringOutputParser(),
-  });
-
-  const retrievalChain = await createRetrievalChain({
-    combineDocsChain: documentChain,
-    retriever: vectorStoreRetriever,
-  });
-
-  const answerResponse = await retrievalChain.invoke({ input: 'what is LangSmith?' });
-
-  // Conversational Chain
-
-  const historyAwarePrompt = ChatPromptTemplate.fromMessages([
+      {context}
+      `,
+    ],
     new MessagesPlaceholder("chat_history"),
     ["user", "{input}"],
-    [
-      "user",
-      "Given the above conversation, generate a search query to look up in order to get information relevant to the conversation",
-    ],
   ]);
 
+  // Retriever (both from vectorstore and chat history)
   const historyAwareRetrieverChain = await createHistoryAwareRetriever({
     llm: chatModel,
     retriever: vectorStoreRetriever,
-    rephrasePrompt: historyAwarePrompt,
+    rephrasePrompt: historyAwareRetrievalPrompt,
   });
 
-  const mockChatHistory = [
-    new HumanMessage("Can LangSmith help test my LLM applications?"),
-    new AIMessage("Yes!"),
-  ];
-
-  const historyAwareAnswer = await historyAwareRetrieverChain.invoke({
-    chat_history: mockChatHistory,
-    input: 'Tell me how!'
+  // Combined docs chain
+  const historyAwareCombineDocumentChain = await createStuffDocumentsChain({
+    llm: chatModel,
+    prompt: historyAwareRetrievalPrompt,
   });
 
-  console.log('invokeChat -> Response', { historyAwareAnswer });
+  // Retrieval chain
+  const conversationalRetrievalChain = await createRetrievalChain({
+    retriever: vectorStoreRetriever,
+    combineDocsChain: historyAwareCombineDocumentChain,
+  });
 
+  const conversationalRetrievalChainAnswer = await conversationalRetrievalChain.invoke({
+    chat_history: [
+      new HumanMessage("Can LangSmith help test my LLM applications?"),
+      new AIMessage("Yes!"),
+    ],
+    input: 'Tell me how!',
+  });
 
+  console.log('invokeChat -> Response', { conversationalRetrievalChainAnswer });
 }
 
 invokeChat();
