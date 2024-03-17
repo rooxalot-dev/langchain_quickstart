@@ -3,7 +3,6 @@ import { config } from 'dotenv';
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { StringOutputParser } from "@langchain/core/output_parsers";
 
 import { CheerioWebBaseLoader } from "langchain/document_loaders/web/cheerio";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
@@ -13,22 +12,25 @@ import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
 import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
 
+import { createRetrieverTool } from "langchain/tools/retriever";
+
+import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+
 config();
 
 const invokeChat = async () => {
-  // Obtains OPENAI_API_KEY from environment variables
-  const chatModel = new ChatOpenAI();
+  // Obtains OPENAI_API_KEY from environment variable
+  const chatModel = new ChatOpenAI({
+    modelName: "gpt-3.5-turbo-1106",
+    temperature: 0.3,
+  });
 
+  // Setup the vectorstore retriever
   const loader = new CheerioWebBaseLoader("https://docs.smith.langchain.com/user_guide");
   const docs = await loader.load();
 
   const splitter = new RecursiveCharacterTextSplitter();
   const splitDocs = await splitter.splitDocuments(docs);
-
-  console.log('Loaded context splitted doc', {
-    splits: splitDocs.length,
-    contentLength: splitDocs[0].pageContent.length,
-  });
 
   const embeddings = new OpenAIEmbeddings();
   const vectorStore = await MemoryVectorStore.fromDocuments(
@@ -37,47 +39,17 @@ const invokeChat = async () => {
   );
   const vectorStoreRetriever = vectorStore.asRetriever();
 
-  // Prompt
-  const historyAwareRetrievalPrompt = ChatPromptTemplate.fromMessages([
-    [
-      'system',
-      `Answer the user's questions based on the below context:
+  // instantiates Tavily search engine and obtains TAVILY_API_KEY from environment variable
+  const searchTool = new TavilySearchResults();
 
-      {context}
-      `,
-    ],
-    new MessagesPlaceholder("chat_history"),
-    ["user", "{input}"],
-  ]);
-
-  // Retriever (both from vectorstore and chat history)
-  const historyAwareRetrieverChain = await createHistoryAwareRetriever({
-    llm: chatModel,
-    retriever: vectorStoreRetriever,
-    rephrasePrompt: historyAwareRetrievalPrompt,
+  const retrieverTool = createRetrieverTool(vectorStoreRetriever, {
+    name: "langsmith_search",
+    description: "Search for information about LangSmith. For any questions about LangSmith, you must use this tool!",
   });
 
-  // Combined docs chain
-  const historyAwareCombineDocumentChain = await createStuffDocumentsChain({
-    llm: chatModel,
-    prompt: historyAwareRetrievalPrompt,
-  });
+  // List available tools
+  const tools = [retrieverTool, searchTool];
 
-  // Retrieval chain
-  const conversationalRetrievalChain = await createRetrievalChain({
-    retriever: vectorStoreRetriever,
-    combineDocsChain: historyAwareCombineDocumentChain,
-  });
-
-  const conversationalRetrievalChainAnswer = await conversationalRetrievalChain.invoke({
-    chat_history: [
-      new HumanMessage("Can LangSmith help test my LLM applications?"),
-      new AIMessage("Yes!"),
-    ],
-    input: 'Tell me how!',
-  });
-
-  console.log('invokeChat -> Response', { conversationalRetrievalChainAnswer });
 }
 
 invokeChat();
