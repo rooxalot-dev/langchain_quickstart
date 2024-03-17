@@ -2,25 +2,21 @@ import { config } from 'dotenv';
 
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
 import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts';
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
 
 import { CheerioWebBaseLoader } from "langchain/document_loaders/web/cheerio";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
 
-import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
-import { createRetrievalChain } from "langchain/chains/retrieval";
-import { createHistoryAwareRetriever } from "langchain/chains/history_aware_retriever";
-
 import { createRetrieverTool } from "langchain/tools/retriever";
-
 import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+
+import { createOpenAIFunctionsAgent, AgentExecutor } from "langchain/agents";
 
 config();
 
 const invokeChat = async () => {
   // Obtains OPENAI_API_KEY from environment variable
-  const chatModel = new ChatOpenAI({
+  const aiModel = new ChatOpenAI({
     modelName: "gpt-3.5-turbo-1106",
     temperature: 0.3,
   });
@@ -49,6 +45,30 @@ const invokeChat = async () => {
 
   // List available tools
   const tools = [retrieverTool, searchTool];
+
+  const agentPrompt = ChatPromptTemplate.fromMessages([
+    ["system", "You are a helpful assistant"],
+    ["user", "{input}"],
+    new MessagesPlaceholder("agent_scratchpad"),
+  ]);
+
+  const agent = await createOpenAIFunctionsAgent({
+    llm: aiModel,
+    prompt: agentPrompt,
+    tools,
+  });
+
+  const agentExecutor = new AgentExecutor({
+    agent,
+    tools,
+    // verbose: true,
+  });
+
+  const agentResult = await agentExecutor.invoke({
+    input: "How can LangSmith help with testing?",
+  });
+
+  console.log(agentResult.output);
 
 }
 
